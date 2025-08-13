@@ -1,6 +1,5 @@
 use crate::nsfile;
 use crate::nsfolder;
-use std::io::Write;
 
 pub fn cmd() -> clap::Command {
     clap::Command::new("build")
@@ -10,24 +9,31 @@ pub fn cmd() -> clap::Command {
         .arg(clap::arg!(-r --release "Build release version").action(clap::ArgAction::SetTrue))
 }
 
-pub fn run_subcmd(_matches: &clap::ArgMatches) {
+pub fn run_subcmd(matches: &clap::ArgMatches) {
     let _project_cache = nsfolder::check_dot_ns_and_init();
+    let ver = crate::verbosity::Verbosity::new(matches);
 
     // from cache, find out if it is necessary to re-create CMakeLists.txt files from project.ns
 
     let Some(res) = nsfile::parse_file("project.ns") else {
-        panic!("ill formed project.ns file")
+        panic!("Ill formed project.ns file")
     };
+
+    ver.msg(2, &format!("{res:#?}"));
 
     let project = res
         .find_str("PROJECT")
-        .expect("A project name should be given.");
+        .expect("A project name should be given (project.ns:PROJECT).");
     let exe = res.find_str("EXE").unwrap_or(project);
     let nsengine_bloc = res
         .find_data_bloc("NSENGINE")
-        .expect("A nsengine definition should be present");
-    let nsengine_path = nsengine_bloc.find_str("PATH").expect("ns path is required");
+        .expect("A nsengine definition should be present (project.ns:NSENGINE).");
+    let nsengine_path = nsengine_bloc
+        .find_str("PATH")
+        .expect("Ns path is required (project.ns:NSENGINE:PATH).");
     let nsengine_mods = nsengine_bloc.get_array("MODULES");
+    ver.msg(2, &format!("Loading modules: {nsengine_mods:?}"));
+
     let libs = res.get_array("LIBS");
 
     let cmakelists_contents = nsfolder::get_cmake_lists_content(
@@ -39,11 +45,10 @@ pub fn run_subcmd(_matches: &clap::ArgMatches) {
         libs,
     );
 
-    std::env::set_current_dir("./.ns").unwrap();
-    let mut cmakelists = std::fs::File::create("CMakeLists.txt").unwrap();
-    write!(cmakelists, "{}", cmakelists_contents).unwrap();
+    ver.set_current_dir("./.ns");
+    ver.create_file_with_data("CMakeLists.txt", &cmakelists_contents);
+    ver.fs_copy("CMakeLists.txt", "../CMakeLists.txt");
 
-    std::fs::copy("CMakeLists.txt", "../CMakeLists.txt").unwrap();
     let _output = std::process::Command::new("cmake")
         .arg("-S")
         .arg("..")
@@ -52,13 +57,14 @@ pub fn run_subcmd(_matches: &clap::ArgMatches) {
         .arg("-GNinja")
         .stdout(std::io::stdout())
         .output()
-        .unwrap();
+        .expect("Error running command: 'cmake -S .. -B ./build -GNinja'.");
 
-    std::env::set_current_dir("./build").unwrap();
+    ver.set_current_dir("./build");
+
     let _output = std::process::Command::new("ninja")
         .stdout(std::io::stdout())
         .output()
-        .unwrap();
+        .expect("Error running command: 'ninja'.");
 
-    std::fs::remove_file("../../CMakeLists.txt").unwrap();
+    ver.remove_file("../../CMakeLists.txt");
 }

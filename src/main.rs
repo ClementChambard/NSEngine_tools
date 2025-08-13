@@ -1,3 +1,4 @@
+mod add;
 mod build;
 mod new;
 mod nsfile;
@@ -11,6 +12,7 @@ fn cmd() -> clap::Command {
         .subcommand(new::cmd())
         .subcommand(build::cmd())
         .subcommand(run::cmd())
+        .subcommand(add::cmd())
 }
 
 fn main() {
@@ -26,6 +28,10 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("run") {
         run::run_subcmd(matches);
+    }
+
+    if let Some(matches) = matches.subcommand_matches("add") {
+        add::run_subcmd(matches);
     }
 }
 

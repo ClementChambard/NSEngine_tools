@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::PathBuf;
 
 pub fn cmd() -> clap::Command {
@@ -19,7 +18,7 @@ pub fn cmd() -> clap::Command {
 
 pub fn run_subcmd(matches: &clap::ArgMatches) {
     let name = matches.get_one::<String>("name").unwrap();
-    let verbosity = crate::verbosity::calculate_verbosity(matches);
+    let ver = crate::verbosity::Verbosity::new(matches);
 
     let dir = if let Some(d) = matches.get_one::<PathBuf>("dir") {
         d.clone()
@@ -39,83 +38,55 @@ pub fn run_subcmd(matches: &clap::ArgMatches) {
     let nsengine_dir = std::path::Path::new(&nsengine_loc);
 
     if dir.exists() {
-        println!(
-            "Error: can't create project in existing directory: {}",
-            dir.display()
-        );
+        println!("Error: can't create project in existing directory: {dir:?}");
         return;
     }
 
-    let has_nsengine = if !nsengine_dir.exists() {
+    let _has_nsengine = if !nsengine_dir.exists() {
         println!("Warning: can't find NSEngine.");
         false
     } else {
-        if verbosity > 1 {
-            println!("using NSEngine from dir: {}", nsengine_dir.display());
-        }
+        ver.msg(1, &format!("Using NSEngine from dir: {nsengine_dir:?}"));
         true
     };
 
-    if verbosity > 1 {
-        println!("creating project in directory: {}", dir.display());
-    }
-
-    std::fs::create_dir(dir).unwrap();
-    if verbosity > 2 {
-        println!("created directory: {}", dir.display());
-    }
-
-    std::env::set_current_dir(dir).unwrap();
-    if verbosity > 2 {
-        println!("navigating to {}", dir.display());
-    }
-
-    std::fs::create_dir("src").unwrap();
-    if verbosity > 2 {
-        println!("created directory: src");
-    }
+    ver.msg(1, &format!("Using NSEngine from dir: {nsengine_dir:?}"));
+    ver.create_dir(dir);
+    ver.set_current_dir(dir);
+    ver.create_dir("src");
 
     // TEMP
     std::process::Command::new("cp")
         .arg("-r")
-        .arg(&format!("{}/assets", nsengine_dir.display()))
+        .arg(format!("{}/assets", nsengine_dir.display()))
         .arg(".")
         .output()
-        .unwrap();
-    // std::fs::create_dir("assets").unwrap();
-    // if verbosity > 2 {
-    //     println!("created directory: assets");
-    // }
+        .expect(&format!(
+            "Error running command 'cp -r {}/assets .'.",
+            nsengine_dir.display()
+        ));
+    // ver.create_dir("assets");
 
-    let mut ns_file = std::fs::File::create("project.ns").unwrap();
-    write!(
-        ns_file,
-        "{}",
-        crate::nsfile::make_default_project_ns(name, &format!("{}", nsengine_dir.display()))
-    )
-    .unwrap();
+    ver.create_file_with_data(
+        "project.ns",
+        &crate::nsfile::make_default_project_ns(name, &format!("{}", nsengine_dir.display())),
+    );
 
-    if verbosity > 2 {
-        println!("wrote default project.ns file");
-    }
+    ver.create_file_with_data("src/main.cpp", DEFAULT_MAIN_CPP);
+    ver.create_file_with_data("src/Game.hpp", DEFAULT_GAME_HPP);
+    ver.create_file_with_data("src/Game.cpp", DEFAULT_GAME_CPP);
+    ver.create_file_with_data(".gitignore", ".ns/\n");
+}
 
-    let mut main_file = std::fs::File::create("src/main.cpp").unwrap();
-    write!(
-        main_file,
-        r#"#include "Game.hpp"
+const DEFAULT_MAIN_CPP: &str = r#"#include "Game.hpp"
 
 int main() {{
     Game().run();
     return 0;
 }}
-"#
-    )
-    .unwrap();
+"#;
 
-    let mut game_header = std::fs::File::create("src/Game.hpp").unwrap();
-    write!(
-        game_header,
-        r#"#ifndef GAME_HEADER_INCLUDED
+const DEFAULT_GAME_HPP: &str = r#"#ifndef GAME_HEADER_INCLUDED
 #define GAME_HEADER_INCLUDED
 
 #include <NSEngine.hpp>
@@ -135,14 +106,9 @@ private:
 }};
 
 #endif // GAME_HEADER_INCLUDED
-"#
-    )
-    .unwrap();
+"#;
 
-    let mut game_file = std::fs::File::create("src/Game.cpp").unwrap();
-    write!(
-        game_file,
-        r#"#include "Game.hpp"
+const DEFAULT_GAME_CPP: &str = r#"#include "Game.hpp"
 
 void Game::on_create() {{}}
 
@@ -151,10 +117,4 @@ void Game::on_update() {{}}
 void Game::on_render() {{}}
 
 void Game::on_destroy() {{}}
-"#
-    )
-    .unwrap();
-
-    let mut gitignore = std::fs::File::create(".gitignore").unwrap();
-    writeln!(gitignore, ".ns/").unwrap();
-}
+"#;
